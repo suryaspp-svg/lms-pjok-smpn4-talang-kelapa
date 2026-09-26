@@ -436,7 +436,35 @@ function enterApp(){$('loginScreen').classList.remove('active');$('appScreen').c
 function completedBox(rec,title){return '<div class="center"><h3>🔒 '+title+' sudah dikerjakan</h3><div class="score">'+rec.score+'</div><p>'+rec.correct+'/5 benar. Tidak dapat diulang.</p></div>'}
 async function serverStatus(m){const d=await apiGet({action:'status',nisn:student.NISN,bab:activeBab,pertemuan:m});if(!d.success)throw Error(d.error||'Gagal membaca status');return d.records||[]}
 function recOf(r,kind,level=''){return r.find(x=>x.kind===kind&&String(x.level||'')===String(level))}
-async function loadMateri(){if(activeBab!=='BAB 2'){$('materiList').innerHTML=(activeBab==='BAB 3'?BAB3[grade()].materials:EXTRA_MATERIALS[activeBab][grade()]).map((m,i)=>'<details class="material" '+(i===0?'open':'')+'><summary>'+esc(m[0])+'</summary><div class="body">'+esc(m[1])+'</div></details>').join('');return} $('materiList').innerHTML='<div class="loading">Memuat materi...</div>';try{const d=await apiGet({action:'materi',tingkat:student.Tingkat,bab:activeBab});$('materiList').innerHTML=d.success&&d.data?.length?d.data.map(m=>'<details class="material"><summary>'+esc(m.Judul||m.Materi||'Materi')+'</summary><div class="body">'+esc(m.Isi||m.Konten||m.Ringkasan||'')+'</div></details>').join(''):'<div class="warning">Materi belum tersedia.</div>'}catch(e){$('materiList').innerHTML='<div class="warning">Gagal memuat materi.</div>'}}
+async function loadMateri(){
+  const root=$('materiList');
+  root.innerHTML='<div class="loading">Memuat materi dari Google Sheets...</div>';
+  try{
+    const d=await apiGet({action:'materi',tingkat:student.Tingkat,bab:activeBab});
+    if(!d.success)throw Error(d.error||d.message||'Server tidak merespons');
+    const rows=d.data||[];
+    if(!rows.length){root.innerHTML='<div class="warning">Materi '+esc(activeBab)+' belum tersedia di Google Sheets.</div>';return}
+    const groups=[
+      ['Pengertian',r=>/pengertian/i.test(r.Submateri||'')],
+      ['Sejarah Singkat',r=>/sejarah/i.test(r.Submateri||'')],
+      ['Teknik yang Dipelajari',r=>/teknik/i.test(r.Submateri||'')],
+      ['Peraturan Singkat, Skor dan Pelanggaran',r=>/peraturan/i.test(r.Submateri||'')],
+      ['Sarana dan Prasarana',r=>/sarana|prasarana|peralatan/i.test(r.Submateri||'')],
+      ['Keselamatan',r=>/keselamatan/i.test(r.Submateri||'')]
+    ];
+    const sections=groups.map(([label,test],i)=>{
+      const items=rows.filter(test);
+      if(!items.length)return '';
+      return '<details class="material" '+(i===0?'open':'')+'><summary>'+(i+1)+'. '+label+'</summary><div class="body">'+
+        items.map(r=>'<article style="margin:10px 0;padding:14px;border-radius:12px;background:rgba(37,99,235,.055)">'+
+          '<h3 style="margin:0 0 8px">'+esc(r.Judul||label)+'</h3>'+
+          '<p style="white-space:pre-line;line-height:1.75;margin:0">'+esc(r.Isi_Materi||'Materi sedang disiapkan guru.')+'</p>'+
+          (r.Video_URL?'<p><a target="_blank" rel="noopener" href="'+esc(r.Video_URL)+'">▶ Video pendukung</a></p>':'')+
+          '</article>').join('')+'</div></details>';
+    }).filter(Boolean);
+    root.innerHTML=sections.join('')||'<div class="warning">Data materi ada, tetapi kategori Submateri belum sesuai format. Periksa sheet MATERI.</div>';
+  }catch(e){root.innerHTML='<div class="warning">Gagal memuat materi. '+esc(String(e.message||''))+'</div>'}
+}
 function renderQuestions(arr,prefix,fn){return arr.map((q,i)=>'<div class="question"><h3>'+(i+1)+'. '+esc(q.Soal)+'</h3>'+['A','B','C','D'].map(a=>'<label class="choice"><input type="radio" name="'+prefix+i+'" value="'+a+'"> <b>'+a+'.</b> '+esc(q[a])+'</label>').join('')+'</div>').join('')+'<button class="primary" onclick="'+fn+'()">Kirim Jawaban</button>'}
 function answersFor(arr,prefix){return arr.map((_,i)=>document.querySelector('input[name="'+prefix+i+'"]:checked')?.value||'')}
 async function loadQuiz(){currentQuizMeeting=$('quizMeeting').value;const m=currentQuizMeeting,bab=activeBab;$('quizBox').innerHTML='<div class="loading">Memeriksa kesempatan di server...</div>';try{const r=await serverStatus(m);if(bab!==activeBab||m!==currentQuizMeeting)return;const old=recOf(r,'quiz');if(old){$('quizBox').innerHTML=completedBox(old,'Kuis');return}const d=await apiGet({action:'kuis',nisn:student.NISN,tingkat:student.Tingkat,bab,pertemuan:m});if(!d.success||d.data?.length!==5)throw Error(d.message||d.error||'Soal tidak tersedia');quizData=d.data;$('quizBox').innerHTML=renderQuestions(quizData,'q','submitQuiz')}catch(e){$('quizBox').innerHTML='<div class="warning">'+esc(e.message)+' — Pastikan Apps Script LMS V4 sudah diterapkan.</div>'}}
